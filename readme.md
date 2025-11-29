@@ -1,1 +1,110 @@
-Transformer-GAN for Time-Series Anomaly DetectionThis repository implements an unsupervised Transformer-based Generative Adversarial Network (GAN) for detecting anomalies in multivariate time-series data. The model leverages the sequence modeling capabilities of Transformers combined with the reconstruction-based anomaly detection approach of GANs.📌 Project OverviewGoal: Detect anomalies in sensor data (e.g., NASA SMAP/MSL) without needing labeled anomaly examples during training.Method: Unsupervised Reconstruction. The model learns "normal" patterns. Large reconstruction errors during testing indicate anomalies.Key Architecture: Transformer Encoder-Decoder (Generator) + MLP Discriminator.Evaluation: Validated using Synthetic Anomaly Injection to ensure robustness.📂 Code StructureThe implementation is divided into modular cells for reproducibility:Data Loading: Robust handling of .npy files, Z-Score normalization, and Sliding Window creation.Model Architecture: PyTorch implementation of the Transformer-GAN and Positional Encoding.Training Loop: Adversarial training with composite loss functions (Reconstruction + Adversarial + Contrastive).Evaluation: Synthetic anomaly injection pipeline and calculation of F1, AUPRC, and Point-Adjusted F1 scores.📊 1. Dataset & PreprocessingDatasetThe code is designed for Multivariate Time-Series Data (specifically formatted like the NASA SMAP/MSL datasets).Format: .npy (NumPy arrays).Structure: Shape (Time_Steps, Features).Preprocessing PipelineZ-Score Normalization:Data is normalized to Mean=0 and Std=1. This is crucial for anomaly detection to preserve the magnitude of outliers relative to the noise.$$x' = \frac{x - \mu}{\sigma + \epsilon}$$Sliding Windows:The continuous time series is sliced into fixed-length windows.Window Size: 100 time steps.Stride: 10 steps (for overlap).Geometric Masking (Augmentation):During training, random geometric blocks of the input window are masked (set to 0). This forces the model to learn context dependencies to reconstruct the missing data, rather than just copying the input.🧠 2. Model ArchitectureThe framework consists of two competing networks:The Generator (Transformer)Role: Reconstructs the input window. It tries to fool the discriminator into thinking the reconstruction is real data.Components:Input Projection: Projects features to d_model dimensions.Positional Encoding: Adds sinusoidal information to retain time order.Encoder: 2-layer Transformer Encoder (captures dependencies).Decoder: 2-layer Transformer Decoder (reconstructs the sequence).The DiscriminatorRole: Distinguishes between the original real window and the reconstructed fake window.Components: A 3-layer MLP (Multi-Layer Perceptron) with LeakyReLU activation and a Sigmoid output.⚙️ 3. Training ProcedureThe model is trained for 50 Epochs using a composite loss function.Loss ComponentsReconstruction Loss ($L_{rec}$): MSE between Input and Output. Ensures the model captures the shape of the data.Adversarial Loss ($L_{adv}$): Standard GAN loss. The Generator tries to minimize the probability that the Discriminator identifies the output as "Fake".Contrastive Loss ($L_{cont}$): InfoNCE loss on the latent vectors ($z$) to learn robust feature representations.Training ConvergenceBelow is the loss curve over 50 epochs. You can see the Generator Loss (Blue) decreasing smoothly as it learns to reconstruct the data, while the Discriminator (Orange) stabilizes.(File: trainloss.png)Reconstruction Quality CheckAt Epoch 50, the model successfully reconstructs the complex wave patterns of the input data.(File: qualitycheck.png)🧪 4. Evaluation & MetricsSince real-world anomaly labels are often scarce or unreliable, we utilized Synthetic Anomaly Injection to scientifically measure performance.Injection StrategyWe create a copy of the test set and inject specific anomalies into 20% of the windows:Spikes: Sudden high-magnitude values.Drops: Signal drops to zero.Noise: High-variance Gaussian noise.Metrics UsedReconstruction Error (MSE): The anomaly score. High MSE = Anomaly.AUPRC (Area Under Precision-Recall Curve): Measures performance across all possible thresholds.Standard F1 Score: Harmonic mean of Precision and Recall at the best threshold.Point Adjustment (PA) F1: A standard metric in time-series literature. If the model detects any part of a contiguous anomaly segment, the whole segment is considered correctly detected.📈 5. ResultsScore Distribution (Normal vs. Anomaly)The histogram below proves the effectiveness of the model.Blue (Normal): Concentrated on the left (Low Error).Red (Anomaly): Pushed to the right (High Error).Separation: The clear separation between the two distributions indicates high detection capability.(File: rem.png)Precision-Recall CurveThe model achieves an AUPRC of 0.58. The curve shows the trade-off between precision and recall.(File: prcurve.png)Anomaly VisualizationThe plot below shows the Reconstruction Error over time. The Red Spikes correspond to the injected anomalies, showing that the model reacts violently (high error) to the anomalies while keeping error low for normal regions.(File: anamolyscore.png)Final Quantitative ResultsMetricScoreDescriptionAUPRC0.5426Area Under Precision-Recall CurveBest Standard F10.5343Traditional F1 ScorePoint Adjusted F10.5927Adjusted for contiguous segments🚀 How to RunUpload Data: Ensure your .npy files are in /kaggle/input.Run Cell 1: Executes get_clean_loaders() to prepare data.Run Cell 2: Initializes the TransformerGAN class.Run Cell 3: Executes train_final_model(epochs=50).Run Cell 4: Executes evaluate_comprehensive_metrics(model, test_loader) to perform the synthetic injection and generate the plots shown above.📝 ConclusionThis implementation demonstrates that a Transformer-GAN architecture can effectively learn the normal manifold of time-series data. By using Z-Score normalization and a composite loss function, the model successfully separates normal data from anomalies, as evidenced by the clear distribution shift in the results.
+# Transformer-GAN for Time-Series Anomaly Detection (TranAD-GAN)
+
+## 🎯 Overview
+
+This project implements an unsupervised anomaly detection framework based on a **Transformer Encoder-Decoder** architecture acting as a Generator, trained adversarially with a Discriminator. The goal is to accurately detect deviations (anomalies) in multivariate time-series data by learning the "normal" reconstruction pattern.
+
+The model is evaluated using **Synthetic Anomaly Injection** due to the lack of reliable ground truth labels, providing a robust measure of its true detection capability.
+
+---
+
+## 🛠️ 1. Architecture and Components
+
+The core model combines a Transformer-based Generator with a simple MLP Discriminator.
+
+### A. Generator (Transformer Encoder-Decoder)
+The Generator is responsible for reconstructing the input time-series window. Its loss function encourages three properties: accurate reconstruction, meaningful latent representations, and fooling the discriminator.
+
+* **Input:** Time series window $\mathbf{x} \in \mathbb{R}^{L \times D}$ (Length $\times$ Features).
+* **Positional Encoding:** Adds sinusoidal signals to preserve sequential order.
+* **Output:** Reconstructed window $\mathbf{\hat{x}}$.
+* **Latent Vector ($\mathbf{z}$):** Extracted from the Encoder output for contrastive learning.
+
+### B. Discriminator (MLP)
+The Discriminator distinguishes between original **Real** windows and **Reconstructed** (Fake) windows.
+
+### C. Training Loss (Composite)
+The Generator is optimized using a weighted sum of three distinct losses:
+1.  **Reconstruction Loss ($L_{rec}$):** $\text{MSE}(\mathbf{x}, \mathbf{\hat{x}})$. Minimizes reconstruction error.
+2.  **Adversarial Loss ($L_{adv}$):** Binary Cross-Entropy (BCE). Minimizes $\text{log}(1 - D(\mathbf{\hat{x}}))$. Encourages realistic output.
+3.  **Contrastive Loss ($L_{cont}$):** InfoNCE loss on latent vectors $\mathbf{z}_1$ and $\mathbf{z}_2$ (from two different views of the same window). Encourages similar inputs to have similar embeddings.
+
+---
+
+## 📈 2. Training Convergence & Reconstruction Quality
+
+Training was performed for **50 epochs**. The loss curves demonstrate stability, and the reconstruction check confirms the Generator's ability to model normal data effectively.
+
+### Training Loss Convergence
+
+The Generator loss (Blue) steadily decreases, while the Discriminator loss (Orange) stabilizes, indicating a successful GAN training dynamic.
+
+
+*(File: trainloss.png)*
+
+### Reconstruction Check (Epoch 50)
+
+The model accurately reconstructs a normal time-series segment (black line) with minimal deviation (cyan dashed line), indicating strong learning of the "normal manifold." The slight deviation near the end is a common characteristic of time-series reconstruction models.
+
+
+*(File: qualitycheck.png)*
+
+---
+
+## 🔬 3. Evaluation & Anomaly Results
+
+Evaluation is performed on synthetically injected anomalies. The anomaly score is the **Mean Squared Error (MSE)** between the input and its reconstruction.
+
+### Score Distribution Analysis
+
+The histogram below is the most critical diagnostic tool. The **Normal Data (Blue)** reconstruction errors are clearly separated from the **Anomaly Data (Red)** errors, which are pushed to the right side (higher MSE). This separation is the foundation of high detection accuracy.
+
+
+
+[Image of Score Distribution]
+
+*(File: rem.png)*
+
+### Quantitative Metrics
+
+| Metric | Score | Description |
+| :--- | :--- | :--- |
+| **Best Standard F1** | **0.5343** | F1 Score at the optimal threshold. |
+| **AUPRC (AUC)** | **0.5426** | Area Under the Precision-Recall Curve. |
+| **Best PA F1 Score** | **0.5927** | F1 Score after applying Point Adjustment, which is more tolerant to detection latency. |
+
+The scores suggest that while the model separates the distributions, there is significant overlap (as seen in the histogram), leading to a moderate AUPRC/F1 score (~0.54).
+
+### Precision-Recall Curve
+
+The PR curve shows the model's trade-off, achieving the highest precision around **Recall $\approx 0.35$**.
+
+
+
+[Image of Precision-Recall Curve]
+
+*(File: prcurve.png)*
+
+### Anomaly Score Visualization
+
+The compressed global view uses **Max Pooling (Bin Size 50)** to shrink the long time series while retaining anomaly peaks. The high red spikes correspond directly to the time windows where synthetic anomalies were injected, confirming the model's ability to localize deviations.
+
+
+*(File: anamolyscore.png)*
+
+---
+
+## ⚙️ 4. Code Execution Details
+
+### Preprocessing Summary
+| Step | Value | Purpose |
+| :--- | :--- | :--- |
+| **Normalization** | Z-Score (Mean=0, Std=1) | Preserves outlier magnitude. |
+| **Window Size** | 100 | Context length for the Transformer. |
+| **Stride** | 10 | Overlapping windows for dense coverage. |
+| **Augmentation** | Geometric Masking | Improves robustness and generalization. |
+
+### Data Preparation
+The code uses `get_clean_loaders()` to scan the `/kaggle/input` directory, identify files with the **most common feature dimension**, and split them into `train_loader` and `test_loader`.
+```python
+train_loader, test_loader, feat_dim, test_files = get_clean_loaders()
